@@ -4508,6 +4508,7 @@ module.exports = {
   getUsageLimits,
   normalizePlanLabel,
   resetUsageLimitsCache,
+  OPENCODE_GO_LIMITS_CACHE_FILE,
   cacheExpiresAtMs,
   runCommand,
   extractGeminiOauthClientCredentials,

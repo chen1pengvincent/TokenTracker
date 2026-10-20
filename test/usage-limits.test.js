@@ -6001,7 +6001,9 @@ describe("OpenCode Go limits cache credential provenance", () => {
           () => true,
           () => true,
         ),
-        Promise.resolve(false),
+        // Give an early settlement a later turn to be observed, so the
+        // false branch cannot win by draining first.
+        new Promise((resolve) => setTimeout(() => resolve(false), 0)),
       ]);
       assert.equal(firstSettled, false, "the old fetch must still be pending");
 

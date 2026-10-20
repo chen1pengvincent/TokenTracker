@@ -61,11 +61,11 @@ function resolveCommandcodeAuthPath({ home, env = process.env } = {}) {
   return path.join(dir, COMMANDCODE_AUTH_DIRNAME, COMMANDCODE_AUTH_FILENAME);
 }
 
-function readCommandcodeCredential({ home, env = process.env } = {}) {
+function readCommandcodeCredential({ home, trackerDir, env = process.env } = {}) {
   const fromEnv =
     env && typeof env === "object" ? env[COMMANDCODE_API_KEY_ENV] : null;
   if (isNonEmptyString(fromEnv)) return { apiKey: fromEnv.trim(), source: "env" };
-  const stored = readStoredApiKey({ provider: "command-code", home });
+  const stored = readStoredApiKey({ provider: "command-code", trackerDir, home });
   if (stored) return { apiKey: stored, source: "stored" };
   const authPath = resolveCommandcodeAuthPath({ home, env });
   if (!authPath) return { apiKey: null, source: "none" };
@@ -258,11 +258,12 @@ function withOrgParam(route, orgId) {
 // usage-limits.js converts both into the panel row.
 async function fetchCommandcodeLimits({
   home,
+  trackerDir,
   env = process.env,
   fetchImpl = fetch,
   baseUrl = COMMANDCODE_API_BASE_URL,
 } = {}) {
-  const credential = readCommandcodeCredential({ home, env });
+  const credential = readCommandcodeCredential({ home, trackerDir, env });
   const apiKey = credential.apiKey;
   if (!apiKey) return { configured: false };
 

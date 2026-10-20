@@ -24,6 +24,11 @@ const PROVIDER_KEY_ENV = {
   commandCode: "COMMAND_CODE_API_KEY",
 };
 
+const PROVIDER_KEY_STORE_ID = {
+  opencodeGo: "opencode-go",
+  commandCode: "command-code",
+};
+
 function commandCodeSetupPlatform() {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent || "";
   return /Windows/i.test(ua) ? "windows" : /Linux/i.test(ua) ? "linux" : "macos";
@@ -724,7 +729,7 @@ function ZcodeStartPlanSection({ data, mode, now }) {
   );
 }
 
-function renderConfiguredProvider(id, data, title, mode, expanded, onToggle, badge = null, subscription = null, now = Date.now()) {
+function renderConfiguredProvider(id, data, title, mode, expanded, onToggle, badge = null, subscription = null, now = Date.now(), onKeySaved = null) {
   const spec = PROVIDER_LIMIT_SPECS[id];
   if (!spec) return null;
   // Pace is computed once per window here and shared by the bar + the detail.
@@ -747,7 +752,7 @@ function renderConfiguredProvider(id, data, title, mode, expanded, onToggle, bad
     >
       <LimitWindowSection mode={mode} rows={rows} extra={extra} />
       {id === "opencodeGo" || id === "commandCode" ? (
-        <EnvCredentialNotice providerId={id} data={data} />
+        <EnvCredentialNotice providerId={id} data={data} onSaved={onKeySaved} />
       ) : null}
       {subscription ? <SubscriptionBar subscription={subscription} now={now} mode={mode} /> : null}
       {expanded ? <LimitDetail rows={rows} mode={mode} now={now} /> : null}
@@ -907,7 +912,18 @@ function renderProviderGroup(id, data, mode, expanded, onToggle, subscription = 
       tooltip={copy("limits.provenance.tooltip", { source: provenance.source, confidence: provenance.confidence })}
     />;
   }
-  return renderConfiguredProvider(id, data, title, mode, expanded, onToggle, badge, subscription, now);
+  return renderConfiguredProvider(
+    id,
+    data,
+    title,
+    mode,
+    expanded,
+    onToggle,
+    badge,
+    subscription,
+    now,
+    onKeySaved,
+  );
 }
 
 function CopilotOtelHint({ defaultDir }) {
@@ -1034,13 +1050,15 @@ function ProviderKeyInput({ provider, onSaved }) {
 // A key can still arrive through the process environment (wrapper scripts,
 // headless installs). Show where it came from and how to stop exporting it
 // globally, because the env value shadows any key saved in the panel.
-function EnvCredentialNotice({ providerId, data }) {
+function EnvCredentialNotice({ providerId, data, onSaved }) {
   if (data?.credential_source !== "env") return null;
   const envName = PROVIDER_KEY_ENV[providerId];
-  if (!envName) return null;
+  const storeId = PROVIDER_KEY_STORE_ID[providerId];
+  if (!envName || !storeId) return null;
   return (
     <div className="mt-1.5 rounded-md border border-amber-300/60 bg-amber-50/60 px-2 py-1.5 text-[10.5px] leading-snug text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
       <div>{copy("limits.apiKey.env_note", { env: envName })}</div>
+      <ProviderKeyInput provider={storeId} onSaved={onSaved} />
       {commandCodeSetupPlatform() === "macos" ? (
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <code className="rounded bg-white/70 px-1 py-0.5 font-mono text-[10px] dark:bg-oai-gray-900/60">

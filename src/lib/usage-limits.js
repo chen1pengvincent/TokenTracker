@@ -2603,8 +2603,12 @@ function writeCodexLimitsCache(limits, { home, nowMs = Date.now() } = {}) {
   } catch (_error) {}
 }
 
-function resolveOpencodeGoLimitsCachePath({ home } = {}) {
-  return path.join(home || os.homedir(), ".tokentracker", "tracker", OPENCODE_GO_LIMITS_CACHE_FILE);
+function resolveOpencodeGoLimitsCachePath({ trackerDir, home } = {}) {
+  const dir =
+    typeof trackerDir === "string" && trackerDir.trim()
+      ? trackerDir.trim()
+      : path.join(home || os.homedir(), ".tokentracker", "tracker");
+  return path.join(dir, OPENCODE_GO_LIMITS_CACHE_FILE);
 }
 
 function hasOpencodeGoWindow(limits) {
@@ -2632,10 +2636,15 @@ function normalizeOpencodeGoCachedLimits(
   if (cachedAtMs > nowMs + 60_000) return null;
   if (nowMs - cachedAtMs > effectiveMaxAge) return null;
 
+  const credentialSource =
+    raw?.credential_source === "env" || raw?.credential_source === "stored"
+      ? raw.credential_source
+      : null;
   const cached = {
     configured: true,
     error: null,
     source: typeof raw?.source === "string" ? raw.source : "api",
+    credential_source: credentialSource,
     subscription_status: typeof raw?.subscription_status === "string" ? raw.subscription_status : null,
     plan_label: typeof raw?.plan_label === "string" ? raw.plan_label : null,
     primary_window: isOpencodeGoCacheWindowUsable(raw?.primary_window, { nowMs }) ? raw.primary_window : null,
@@ -2647,8 +2656,8 @@ function normalizeOpencodeGoCachedLimits(
   return hasOpencodeGoWindow(cached) ? cached : null;
 }
 
-function readOpencodeGoLimitsCache({ home, nowMs = Date.now() } = {}) {
-  const cachePath = resolveOpencodeGoLimitsCachePath({ home });
+function readOpencodeGoLimitsCache({ trackerDir, home, nowMs = Date.now() } = {}) {
+  const cachePath = resolveOpencodeGoLimitsCachePath({ trackerDir, home });
   try {
     const parsed = JSON.parse(fs.readFileSync(cachePath, "utf8"));
     return normalizeOpencodeGoCachedLimits(parsed?.opencodeGo, { nowMs });
@@ -2657,12 +2666,17 @@ function readOpencodeGoLimitsCache({ home, nowMs = Date.now() } = {}) {
   }
 }
 
-function writeOpencodeGoLimitsCache(limits, { home, nowMs = Date.now() } = {}) {
+function writeOpencodeGoLimitsCache(limits, { trackerDir, home, nowMs = Date.now() } = {}) {
   if (!limits?.configured || limits.error || !hasOpencodeGoWindow(limits)) return;
-  const cachePath = resolveOpencodeGoLimitsCachePath({ home });
+  const cachePath = resolveOpencodeGoLimitsCachePath({ trackerDir, home });
+  const credentialSource =
+    limits.credential_source === "env" || limits.credential_source === "stored"
+      ? limits.credential_source
+      : null;
   const payload = {
     opencodeGo: {
       source: limits.source || "api",
+      credential_source: credentialSource,
       subscription_status: limits.subscription_status || null,
       plan_label: limits.plan_label || null,
       primary_window: limits.primary_window || null,
@@ -4002,6 +4016,7 @@ async function getUsageLimits(options = {}) {
  */
 async function fetchUsageLimitsUncached({
   home,
+  trackerDir,
   env,
   platform,
   securityRunner,
@@ -4131,7 +4146,7 @@ async function fetchUsageLimitsUncached({
     // OpenCode Go: authoritative subscription windows come from the dashboard
     // scrape; local opencode.db cost is available only as an explicit estimate.
     // See src/lib/opencode-go-limits.js.
-    withProviderTimeout(fetchOpencodeGoLimits({ home, env, fetchImpl: providerFetch }), "OpenCode Go", providerTimeoutMs)
+    withProviderTimeout(fetchOpencodeGoLimits({ home, trackerDir, env, fetchImpl: providerFetch }), "OpenCode Go", providerTimeoutMs)
       .catch((reason) => ({ configured: true, error: reason?.message || "Unknown error" })),
     withProviderTimeout(
       fetchQoderLimits({
@@ -4189,7 +4204,7 @@ async function fetchUsageLimitsUncached({
     // outer race bounds the whole slot: without it three sequential per-request
     // timeouts (whoami, then credits+subscriptions) could hold the aggregate
     // ~2x longer than any sibling provider.
-    withProviderTimeout(fetchCommandcodeLimits({ home, env, fetchImpl: providerFetch }), "CommandCode", providerTimeoutMs)
+    withProviderTimeout(fetchCommandcodeLimits({ home, trackerDir, env, fetchImpl: providerFetch }), "CommandCode", providerTimeoutMs)
       .then(
         (value) => ({ status: "fulfilled", value }),
         (reason) => ({ status: "rejected", reason }),
@@ -4382,9 +4397,9 @@ async function fetchUsageLimitsUncached({
       stale: false,
       cached_at: new Date(nowMs).toISOString(),
     };
-    writeOpencodeGoLimitsCache(opencodeGo, { home, nowMs });
+    writeOpencodeGoLimitsCache(opencodeGo, { trackerDir, home, nowMs });
   } else {
-    const cached = readOpencodeGoLimitsCache({ home, nowMs });
+    const cached = readOpencodeGoLimitsCache({ trackerDir, home, nowMs });
     if (cached) {
       opencodeGo = cached;
     } else {
@@ -4509,6 +4524,7 @@ module.exports = {
   normalizePlanLabel,
   resetUsageLimitsCache,
   OPENCODE_GO_LIMITS_CACHE_FILE,
+  resolveOpencodeGoLimitsCachePath,
   cacheExpiresAtMs,
   runCommand,
   extractGeminiOauthClientCredentials,

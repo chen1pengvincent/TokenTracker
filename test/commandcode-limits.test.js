@@ -142,6 +142,29 @@ describe("readCommandcodeApiKey", () => {
     }
   });
 
+  it("reads the stored key from an explicit tracker directory", async () => {
+    const { tmp, home } = makeAuthHome({ apiKey: "file-key-123" });
+    const trackerDir = fs.mkdtempSync(path.join(os.tmpdir(), "tt-commandcode-tracker-"));
+    try {
+      await writeStoredApiKey({
+        provider: "command-code",
+        trackerDir,
+        apiKey: "tracker-key-456",
+      });
+      assert.equal(
+        readCommandcodeApiKey({ home, trackerDir, env: {} }),
+        "tracker-key-456",
+      );
+      assert.equal(
+        readCommandcodeCredential({ home, trackerDir, env: {} }).source,
+        "stored",
+      );
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.rmSync(trackerDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps COMMAND_CODE_API_KEY above the panel store and reports sources", async () => {
     const { tmp, home } = makeAuthHome({ apiKey: "file-key-123" });
     try {

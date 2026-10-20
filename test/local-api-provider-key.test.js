@@ -7,18 +7,25 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const { test, beforeEach, afterEach } = require("node:test");
 
+const PROVIDER_ENV_NAMES = ["OPENCODE_GO_API_KEY", "COMMAND_CODE_API_KEY"];
+
 let tmpHome;
-let previousEnvKey;
+let previousEnv = {};
 
 beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "tt-provider-key-api-"));
-  previousEnvKey = process.env.OPENCODE_GO_API_KEY;
-  delete process.env.OPENCODE_GO_API_KEY;
+  previousEnv = {};
+  for (const name of PROVIDER_ENV_NAMES) {
+    previousEnv[name] = process.env[name];
+    delete process.env[name];
+  }
 });
 
 afterEach(() => {
-  if (previousEnvKey === undefined) delete process.env.OPENCODE_GO_API_KEY;
-  else process.env.OPENCODE_GO_API_KEY = previousEnvKey;
+  for (const name of PROVIDER_ENV_NAMES) {
+    if (previousEnv[name] === undefined) delete process.env[name];
+    else process.env[name] = previousEnv[name];
+  }
   try {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   } catch {

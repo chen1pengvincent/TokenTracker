@@ -5849,3 +5849,79 @@ describe("cacheExpiresAtMs", () => {
     assert.equal(cacheExpiresAtMs(data, fetchedAt), fetchedAt + MIN_TTL_MS);
   });
 });
+
+describe("OpenCode Go limits cache credential provenance", () => {
+  afterEach(() => {
+    resetUsageLimitsCache();
+  });
+
+  it("persists env provenance and restores it from the stale fallback", async () => {
+    resetUsageLimitsCache();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokentracker-opencode-cache-"));
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    fs.mkdirSync(trackerDir, { recursive: true });
+    const baseOptions = {
+      home: tmp,
+      trackerDir,
+      env: { OPENCODE_GO_API_KEY: "env-key-123456" },
+      platform: "linux",
+      providerTimeoutMs: 1000,
+      securityRunner() {
+        return { status: 1, stdout: "" };
+      },
+      commandRunner() {
+        return { status: 1, stdout: "" };
+      },
+    };
+    try {
+      const live = await getUsageLimits({
+        ...baseOptions,
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            return {};
+          },
+          async text() {
+            return JSON.stringify({
+              useBalance: false,
+              rollingUsage: { status: "ok", usagePercent: 42, resetInSec: 12345 },
+              weeklyUsage: { status: "ok", usagePercent: 18, resetInSec: 678901 },
+              monthlyUsage: { status: "ok", usagePercent: 7, resetInSec: 2592000 },
+            });
+          },
+        }),
+      });
+      assert.equal(live.opencodeGo.credential_source, "env");
+      assert.equal(live.opencodeGo.stale, false);
+
+      const cache = JSON.parse(
+        fs.readFileSync(
+          path.join(trackerDir, "opencode-go-usage-limits-cache.json"),
+          "utf8",
+        ),
+      );
+      assert.equal(cache.opencodeGo.credential_source, "env");
+
+      resetUsageLimitsCache();
+      const stale = await getUsageLimits({
+        ...baseOptions,
+        fetchImpl: async () => ({
+          ok: false,
+          status: 500,
+          async json() {
+            return {};
+          },
+          async text() {
+            return "upstream unavailable";
+          },
+        }),
+      });
+      assert.equal(stale.opencodeGo.stale, true);
+      assert.equal(stale.opencodeGo.credential_source, "env");
+      assert.equal(stale.opencodeGo.primary_window?.used_percent, 42);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});

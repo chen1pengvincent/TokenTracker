@@ -3039,12 +3039,12 @@ function createLocalApiHandler({ queuePath, serverVersion = null, trackerDataDir
         // The in-memory aggregate would otherwise keep serving the previous
         // credential's row (or "not configured") until its TTL expires.
         try {
-          const { resetUsageLimitsCache, OPENCODE_GO_LIMITS_CACHE_FILE } = require("./usage-limits");
+          const { resetUsageLimitsCache, resolveOpencodeGoLimitsCachePath } = require("./usage-limits");
           resetUsageLimitsCache();
           if (provider === "opencode-go") {
             // The disk snapshot is the stale-bars fallback; it must not
             // outlive the key that produced it.
-            await fs.promises.unlink(path.join(trackerDataDir, OPENCODE_GO_LIMITS_CACHE_FILE));
+            await fs.promises.unlink(resolveOpencodeGoLimitsCachePath({ trackerDir: trackerDataDir }));
           }
         } catch {
           /* cache invalidation is best effort; the stored key is authoritative */
@@ -3625,6 +3625,7 @@ function createLocalApiHandler({ queuePath, serverVersion = null, trackerDataDir
         }
         const data = await getUsageLimits({
           home: os.homedir(),
+          trackerDir: trackerDataDir,
           env: process.env,
           platform: process.platform,
           // Punches through the Claude disk fresh-cache (but not the 429

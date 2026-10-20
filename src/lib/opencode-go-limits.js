@@ -738,6 +738,7 @@ async function scrapeOpencodeGoWeb({ cfg, fetchImpl, nowMs, timeoutMs }) {
 
 async function fetchOpencodeGoLimits({
   home,
+  trackerDir,
   env = process.env,
   fetchImpl = fetch,
   nowMs = Date.now(),
@@ -745,7 +746,8 @@ async function fetchOpencodeGoLimits({
   sqliteOptions = {},
 } = {}) {
   const envApiKey = readApiKey(env);
-  const apiKey = envApiKey || readStoredApiKey({ provider: "opencode-go", home });
+  const apiKey =
+    envApiKey || readStoredApiKey({ provider: "opencode-go", trackerDir, home });
   const credentialSource = envApiKey ? "env" : apiKey ? "stored" : null;
   const cfg = readConfig(env);
   const allowLocalEstimate = localEstimateEnabled(env);

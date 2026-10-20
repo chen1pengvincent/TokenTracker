@@ -661,6 +661,31 @@ describe("stored API key", () => {
     }
   });
 
+  it("reads the stored key from an explicit tracker directory", async () => {
+    const home = makeHome();
+    const trackerDir = fs.mkdtempSync(path.join(os.tmpdir(), "tt-opencode-go-tracker-"));
+    try {
+      await writeStoredApiKey({ provider: "opencode-go", trackerDir, apiKey: "tracker-key-12345" });
+      let authHeader = null;
+      const out = await fetchOpencodeGoLimits({
+        home,
+        trackerDir,
+        env: {},
+        fetchImpl: async (_url, init) => {
+          authHeader = init?.headers?.Authorization;
+          return jsonResponse(200, apiUsagePayload());
+        },
+        nowMs: 1_700_000_000_000,
+      });
+
+      assert.equal(authHeader, "Bearer tracker-key-12345");
+      assert.equal(out.credential_source, "stored");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(trackerDir, { recursive: true, force: true });
+    }
+  });
+
   it("prefers OPENCODE_GO_API_KEY over the stored key", async () => {
     const home = makeHome();
     try {

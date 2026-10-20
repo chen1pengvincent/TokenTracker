@@ -397,8 +397,9 @@ describe("UsageLimitsPanel", () => {
     expect(screen.queryByText(/launchctl/)).not.toBeInTheDocument();
   });
 
-  it("explains an environment-provided OpenCode Go key and how to migrate on macOS", () => {
+  it("explains an environment-provided OpenCode Go key and lets the user save one from the notice", async () => {
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" });
+    const onProviderKeySaved = vi.fn();
     render(
       <UsageLimitsPanel
         opencodeGo={{
@@ -408,6 +409,7 @@ describe("UsageLimitsPanel", () => {
           primary_window: { used_percent: 12, reset_at: "2026-10-21T00:00:00.000Z" },
         }}
         order={["opencodeGo"]}
+        onProviderKeySaved={onProviderKeySaved}
       />,
     );
 
@@ -417,6 +419,18 @@ describe("UsageLimitsPanel", () => {
     expect(
       screen.getByText("launchctl unsetenv OPENCODE_GO_API_KEY"),
     ).toBeInTheDocument();
+
+    await fireEvent.change(screen.getByPlaceholderText("Paste API key"), {
+      target: { value: "stored-key-456" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    });
+
+    await vi.waitFor(() => {
+      expect(saveProviderApiKey).toHaveBeenCalledWith("opencode-go", "stored-key-456");
+    });
+    expect(onProviderKeySaved).toHaveBeenCalledTimes(1);
   });
 
   it("does not describe a pace marker when the provider cannot render one (issue 445)", () => {

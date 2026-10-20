@@ -177,7 +177,7 @@ test("POST requires local auth and stores a 0600 key without echoing it", async 
   });
 });
 
-test("saving a key drops the OpenCode Go limits cache", async () => {
+test("saving a key drops the OpenCode Go limits cache and invalidates in-flight fetches", async () => {
   const queuePath = makeQueuePath();
   const cachePath = path.join(
     path.dirname(queuePath),
@@ -187,17 +187,30 @@ test("saving a key drops the OpenCode Go limits cache", async () => {
   const handler = freshHandler(queuePath);
   const token = await authToken(handler);
 
-  const saved = await call(handler, {
-    method: "POST",
-    endpoint: "/functions/tokentracker-provider-key",
-    headers: {
-      "content-type": "application/json",
-      "x-tokentracker-local-auth": token,
-    },
-    body: JSON.stringify({ provider: "opencode-go", apiKey: "test-key-abc123" }),
-  });
+  const usageLimits = require("../src/lib/usage-limits");
+  const originalReset = usageLimits.resetUsageLimitsCache;
+  const resetCalls = [];
+  usageLimits.resetUsageLimitsCache = (options) => {
+    resetCalls.push(options);
+    return originalReset(options);
+  };
+  let saved;
+  try {
+    saved = await call(handler, {
+      method: "POST",
+      endpoint: "/functions/tokentracker-provider-key",
+      headers: {
+        "content-type": "application/json",
+        "x-tokentracker-local-auth": token,
+      },
+      body: JSON.stringify({ provider: "opencode-go", apiKey: "test-key-abc123" }),
+    });
+  } finally {
+    usageLimits.resetUsageLimitsCache = originalReset;
+  }
   assert.equal(saved.statusCode, 200);
   assert.equal(fs.existsSync(cachePath), false);
+  assert.deepEqual(resetCalls, [{ invalidateInFlight: true }]);
 });
 
 test("GET reports the environment as the source when OPENCODE_GO_API_KEY is set", async () => {

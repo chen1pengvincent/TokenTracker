@@ -5924,4 +5924,78 @@ describe("OpenCode Go limits cache credential provenance", () => {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it("does not let an old in-flight fetch repopulate caches after key replacement", async () => {
+    resetUsageLimitsCache();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokentracker-opencode-inflight-"));
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    fs.mkdirSync(trackerDir, { recursive: true });
+    const options = {
+      home: tmp,
+      trackerDir,
+      env: { OPENCODE_GO_API_KEY: "env-key-123456" },
+      platform: "linux",
+      providerTimeoutMs: 1000,
+      securityRunner() {
+        return { status: 1, stdout: "" };
+      },
+      commandRunner() {
+        return { status: 1, stdout: "" };
+      },
+    };
+    const usageResponse = (percent) => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {};
+      },
+      async text() {
+        return JSON.stringify({
+          useBalance: false,
+          rollingUsage: { status: "ok", usagePercent: percent, resetInSec: 12345 },
+          weeklyUsage: { status: "ok", usagePercent: 18, resetInSec: 678901 },
+          monthlyUsage: { status: "ok", usagePercent: 7, resetInSec: 2592000 },
+        });
+      },
+    });
+    let fetchCalls = 0;
+    let releaseFirst;
+    let markFirstStarted;
+    const firstStarted = new Promise((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const firstGate = new Promise((resolve) => {
+      releaseFirst = () => resolve(usageResponse(42));
+    });
+    const fetchImpl = () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        markFirstStarted();
+        return firstGate;
+      }
+      return Promise.resolve(usageResponse(7));
+    };
+    try {
+      const firstPromise = getUsageLimits({ ...options, fetchImpl });
+      await firstStarted;
+      resetUsageLimitsCache({ invalidateInFlight: true });
+      const fresh = await getUsageLimits({ ...options, fetchImpl });
+      assert.equal(fresh.opencodeGo.primary_window?.used_percent, 7);
+
+      releaseFirst();
+      await firstPromise;
+
+      const after = await getUsageLimits({ ...options, fetchImpl });
+      assert.equal(after.opencodeGo.primary_window?.used_percent, 7);
+      const disk = JSON.parse(
+        fs.readFileSync(
+          path.join(trackerDir, "opencode-go-usage-limits-cache.json"),
+          "utf8",
+        ),
+      );
+      assert.equal(disk.opencodeGo.primary_window?.used_percent, 7);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

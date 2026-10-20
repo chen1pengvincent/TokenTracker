@@ -56,6 +56,10 @@ const execFileAsync = promisify(cp.execFile);
 const USAGE_LIMITS_SELECTION_KEYS = ["off-on", "off-off", "on-on", "on-off"];
 const cacheBySelection = {};
 for (const key of USAGE_LIMITS_SELECTION_KEYS) cacheBySelection[key] = { data: null, expiresAtMs: 0 };
+// Credential replacements (provider-key save) bump this generation so a fetch
+// that started under the old credential cannot repopulate the memory or disk
+// caches after invalidation.
+let usageLimitsCacheGeneration = 0;
 function usageLimitsSelectionKey(options) {
   const devin = options?.devinEnabled === true ? "on" : "off";
   const antigravity = isAntigravityQuotaDisabled() ? "off" : "on";
@@ -4003,7 +4007,12 @@ async function getUsageLimits(options = {}) {
   if (inFlightBySelection[selection]) {
     return inFlightBySelection[selection];
   }
-  const promise = fetchUsageLimitsUncached({ ...options, selectionKey: selection }).finally(() => {
+  const cacheGeneration = usageLimitsCacheGeneration;
+  const promise = fetchUsageLimitsUncached({
+    ...options,
+    selectionKey: selection,
+    cacheGeneration,
+  }).finally(() => {
     if (inFlightBySelection[selection] === promise) inFlightBySelection[selection] = null;
   });
   inFlightBySelection[selection] = promise;
@@ -4028,6 +4037,10 @@ async function fetchUsageLimitsUncached({
   providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
   forceRefresh = false,
   devinEnabled = false,
+  // Generation captured by getUsageLimits before the fetch began. A provider
+  // key save bumps it, and this fetch must then stop at returning its own
+  // result: publishing it would restore pre-save data for every later caller.
+  cacheGeneration = usageLimitsCacheGeneration,
   // Selection key fixed by getUsageLimits before the fetch began. Re-deriving it
   // here would let an opt-out flipped mid-fetch store a pre-opt-out result in the
   // post-opt-out slot.
@@ -4397,7 +4410,9 @@ async function fetchUsageLimitsUncached({
       stale: false,
       cached_at: new Date(nowMs).toISOString(),
     };
-    writeOpencodeGoLimitsCache(opencodeGo, { trackerDir, home, nowMs });
+    if (cacheGeneration === usageLimitsCacheGeneration) {
+      writeOpencodeGoLimitsCache(opencodeGo, { trackerDir, home, nowMs });
+    }
   } else {
     const cached = readOpencodeGoLimitsCache({ trackerDir, home, nowMs });
     if (cached) {
@@ -4506,16 +4521,22 @@ async function fetchUsageLimitsUncached({
     };
   }
 
-  cacheBySelection[selectionKey || usageLimitsSelectionKey({ devinEnabled })] = {
-    data,
-    expiresAtMs: cacheExpiresAtMs(data, nowMs),
-  };
+  if (cacheGeneration === usageLimitsCacheGeneration) {
+    cacheBySelection[selectionKey || usageLimitsSelectionKey({ devinEnabled })] = {
+      data,
+      expiresAtMs: cacheExpiresAtMs(data, nowMs),
+    };
+  }
   return data;
 }
 
-function resetUsageLimitsCache() {
+function resetUsageLimitsCache({ invalidateInFlight = false } = {}) {
+  if (invalidateInFlight) usageLimitsCacheGeneration += 1;
   for (const key of USAGE_LIMITS_SELECTION_KEYS) {
     cacheBySelection[key] = { data: null, expiresAtMs: 0 };
+    // Ordinary resets still let a running fetch serve refresh=1 callers; a
+    // credential replacement must not, so drop the old-key promises too.
+    if (invalidateInFlight) inFlightBySelection[key] = null;
   }
 }
 

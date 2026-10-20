@@ -3040,7 +3040,7 @@ function createLocalApiHandler({ queuePath, serverVersion = null, trackerDataDir
         // credential's row (or "not configured") until its TTL expires.
         try {
           const { resetUsageLimitsCache, resolveOpencodeGoLimitsCachePath } = require("./usage-limits");
-          resetUsageLimitsCache();
+          resetUsageLimitsCache({ invalidateInFlight: true });
           if (provider === "opencode-go") {
             // The disk snapshot is the stale-bars fallback; it must not
             // outlive the key that produced it.

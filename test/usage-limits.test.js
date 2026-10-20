@@ -5935,7 +5935,9 @@ describe("OpenCode Go limits cache credential provenance", () => {
       trackerDir,
       env: { OPENCODE_GO_API_KEY: "env-key-123456" },
       platform: "linux",
-      providerTimeoutMs: 1000,
+      // No aggregate/provider timeout: the old fetch must stay pending until
+      // releaseFirst(), not race a timeout and settle early.
+      providerTimeoutMs: 0,
       securityRunner() {
         return { status: 1, stdout: "" };
       },
@@ -5958,7 +5960,8 @@ describe("OpenCode Go limits cache credential provenance", () => {
         });
       },
     });
-    let fetchCalls = 0;
+    const opencodeUsageUrl = "https://opencode.ai/zen/go/v1/usage";
+    let opencodeFetchCalls = 0;
     let releaseFirst;
     let markFirstStarted;
     const firstStarted = new Promise((resolve) => {
@@ -5967,9 +5970,21 @@ describe("OpenCode Go limits cache credential provenance", () => {
     const firstGate = new Promise((resolve) => {
       releaseFirst = () => resolve(usageResponse(42));
     });
-    const fetchImpl = () => {
-      fetchCalls += 1;
-      if (fetchCalls === 1) {
+    const fetchImpl = (url) => {
+      if (url !== opencodeUsageUrl) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          async json() {
+            return {};
+          },
+          async text() {
+            return "unexpected provider request";
+          },
+        });
+      }
+      opencodeFetchCalls += 1;
+      if (opencodeFetchCalls === 1) {
         markFirstStarted();
         return firstGate;
       }
@@ -5981,6 +5996,14 @@ describe("OpenCode Go limits cache credential provenance", () => {
       resetUsageLimitsCache({ invalidateInFlight: true });
       const fresh = await getUsageLimits({ ...options, fetchImpl });
       assert.equal(fresh.opencodeGo.primary_window?.used_percent, 7);
+      const firstSettled = await Promise.race([
+        firstPromise.then(
+          () => true,
+          () => true,
+        ),
+        Promise.resolve(false),
+      ]);
+      assert.equal(firstSettled, false, "the old fetch must still be pending");
 
       releaseFirst();
       await firstPromise;
